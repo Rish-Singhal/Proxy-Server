@@ -102,11 +102,22 @@ class Server:
             port = int((x[(posport+1):])[:wserv-posport-1])
             s_webserv = x[:posport]
 
-        flag = 0
+        #flag = 0
         for b_url in self.con['BLACKLIST']:
             if b_url in s_webserv:
+                conn.send('HTTP/1.0 200 OK\n')
+                conn.send('Content-Type: text/html\n')
+                conn.send(""" < html >
+                             < head >
+                             < title > ERROR < /title >
+                             < / head >
+                             < body >
+                             < h1 align='center' >
+                             NOT ALLOWED!!
+                             < /h1 >
+                             < / body > """)
                 conn.close()
-                flag = 1
+                #flag = 1
                 print("BLACKLISTED URL/// NOT ALLOWED!!! @@ \n")
                 return
 
@@ -184,11 +195,12 @@ class Server:
 
         return z
 
+
         # configuration
 confi = {
     'HOST_NAME': '127.0.0.1',
     'MAX_REQUEST_LEN': 100000,
-    'CONNECTION_TIMEOUT': 5,
+    'CONNECTION_TIMEOUT': 10,
     'BIND_PORT': 20100,
     'BLACKLIST': [],
 }
