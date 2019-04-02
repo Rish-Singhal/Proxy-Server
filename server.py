@@ -8,13 +8,19 @@ import threading
 
 class Server:
     def __init__(self, config):
+
+        lis = self.readBlckSite()
+        for b_url in lis:
+            config['BLACKLIST'].append(b_url)
+
+        print(config['BLACKLIST'])
         self.con = config
         try:
             ''' trying to create socket '''
             self.servSckt = socket.socket(
                 socket.AF_INET, socket.SOCK_STREAM)
         except:
-            #print("Server not created :( \n")
+            # print("Server not created :( \n")
             sys.exit(0)
 
         try:
@@ -22,7 +28,7 @@ class Server:
             self.servSckt.setsockopt(
                 socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         except:
-            #print("Error in reusing  :( \n")
+            # print("Error in reusing  :( \n")
             sys.exit(0)
 
         try:
@@ -30,16 +36,16 @@ class Server:
             self.servSckt.bind((config['HOST_NAME'], config['BIND_PORT']))
 
         except:
-            #print("Error in binding to local server  :( \n")
+            # print("Error in binding to local server  :( \n")
             sys.exit(0)
         self.servSckt.listen(10)
         # try:
         #     ''' listening '''
-        #     self.servSckt.listen(config['MAX_CLIENT_BACKLOG'])
-        #     #print("server listening at port " +
-        #           string(config['BIND_PORT']+"\n"))
+        #     self.servSckt.listen(10)
+        #     print("server listening at port " +
+        #           string(config['BIND_PORT'])+"\n")
         # except:
-        #     #print("error in listening :(\n")
+        #     print("error in listening :(\n")
         #     sys.exit(0)
 
         while(True):
@@ -52,26 +58,30 @@ class Server:
                     nThread.setDaemon(True)
                     nThread.start()
                 except:
-                    #print("error in creating thread:(\n")
+                    # print("error in creating thread:(\n")
                     sys.exit(0)
 
-                #print("Working with "+string(cAddr)+" now!\n")
+                # print("Working with "+string(cAddr)+" now!\n")
 
             except:
-                #print("Error in accepting connection\n")
-    
+                print("Error in accepting connection \n")
+                sys.exit(0)
+
     def handleConn(self, conn, cAddr):
         try:
             ''' getting request '''
             crequest = conn.recv(self.con['MAX_REQUEST_LEN'])
         except:
-            #print("error in recieving request\n")
-        
-        
+            print("error in recieving request\n")
+
         xx = str(crequest).split('\n')[0]
-        #print(xx)
-        full_url = xx.split(' ')[1]
-        #print(full_url)
+        # print(xx)
+        # full_url = full_url = xx.split(' ')[0]
+        try:
+            full_url = xx.split(' ')[1]
+            print(full_url)
+        except:
+            sys.exit(0)
         poshttp = full_url.find("://")
 
         if poshttp == -1:
@@ -92,32 +102,45 @@ class Server:
             port = int((x[(posport+1):])[:wserv-posport-1])
             s_webserv = x[:posport]
 
-        self.new_connection(crequest, port, s_webserv, conn)
+        flag = 0
+
+        for b_url in self.con['BLACKLIST']:
+            if s_webserv in b_url:
+                conn.close()
+                flag = 1
+                print("BLACKLISTED URL/// NOT ALLOWED!!! @@ \n")
+
+        if flag == 0:
+            self.new_connection(crequest, port, s_webserv, conn)
 
     def new_connection(self, crequest, port, s_webserv, conn):
         try:
             ''' creating new socket for the connection '''
             sckt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         except:
-            #print("Error in creating socket for connection .\n")
+            # print("Error in creating socket for connection .\n")
+            aa = 1
 
         try:
             ''' setting timeout '''
             sckt.settimeout(self.con['CONNECTION_TIMEOUT'])
         except:
-            #print("Error in seeting timeout .\n")
+            # print("Error in seeting timeout .\n")
+            aa = 1
 
         try:
             ''' connecting the new socket '''
             sckt.connect((s_webserv, port))
         except:
-            #print("Error in connecting socket for new connection .\n")
+            # print("Error in connecting socket for new connection .\n")
+            aa = 1
 
         try:
             ''' sending request to all '''
             sckt.sendall(crequest)
         except:
-            #print("Error in sending request :( \n")
+            # print("Error in sending request :( \n")
+            aa = 1
 
         while(True):
             ''' passing the data via proxy server '''
@@ -126,7 +149,8 @@ class Server:
                 ''' recieve data '''
                 in_data = sckt.recv(self.con['MAX_REQUEST_LEN'])
             except:
-                #print("error in recieving data\n")
+                # print("error in recieving data\n")
+                aa = 1
 
             if len(in_data) > 0:
                 ''' sending data '''
@@ -137,21 +161,37 @@ class Server:
         self.cclose(conn)
 
     def cclose(self, conn):
-        #print("Closig connection now. ")
+        print("Closig connection now. ")
         try:
             conn.close()
         except:
-            #print("Error in closing connection\n")
+            # print("Error in closing connection\n")
             sys.exit(0)
 
+    def readBlckSite(self):
+        ''' for fetching blacklisted url '''
+        try:
+            f = open("proxy/blacklist.txt", "r")
+        except:
+            print("Error: proxy/blacklist.txt not opening \n")
 
-# configuration
+        z = [i.rstrip(' \n') for i in f.readlines()]
+
+        try:
+            f.close()
+        except:
+            print("Error in closing.\n")
+
+        return z
+
+
+        # configuration
 confi = {
-    'HOST_NAME': '0.0.0.0',
+    'HOST_NAME': '127.0.0.1',
     'MAX_REQUEST_LEN': 100000,
     'CONNECTION_TIMEOUT': 5,
-    'BIND_PORT': 12345,
-    'MAX_CLIENT_BACKLOG':50,
+    'BIND_PORT': 20100,
+    'BLACKLIST': [],
 }
 
 ris_server = Server(confi)
