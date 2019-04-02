@@ -103,15 +103,15 @@ class Server:
             s_webserv = x[:posport]
 
         flag = 0
+
         for b_url in self.con['BLACKLIST']:
-            if b_url in s_webserv:
+            if s_webserv in b_url:
                 conn.close()
                 flag = 1
                 print("BLACKLISTED URL/// NOT ALLOWED!!! @@ \n")
-                return
 
-        # if flag == 0:
-        self.new_connection(crequest, port, s_webserv, conn)
+        if flag == 0:
+            self.new_connection(crequest, port, s_webserv, conn)
 
     def new_connection(self, crequest, port, s_webserv, conn):
         try:
@@ -183,6 +183,7 @@ class Server:
             print("Error in closing.\n")
 
         return z
+
 
         # configuration
 confi = {
