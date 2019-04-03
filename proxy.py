@@ -73,11 +73,9 @@ class Server:
                         target=self.handleConn, args=(cSckt, cAddr))
                     nThread.start()
                 except:
-                    # print("error in creating thread:(\n")
                     self.servSckt.close()
                     sys.exit(0)
 
-                # print("Working with "+string(cAddr)+" now!\n")
 
             except:
                 print("Error in accepting connection \n")
@@ -85,14 +83,14 @@ class Server:
                 sys.exit(0)
 
 
-    def add_log(self, fileurl, client_addr):
+    def add_log(self, fileurl, cAddr):
         fileurl = fileurl.replace("/", "__")
         if not fileurl in logs:
             logs[fileurl] = []
         dt = time.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y")
         logs[fileurl].append({
             "datetime": dt,
-            "client": json.dumps(client_addr),
+            "client": json.dumps(cAddr),
         })
 
     def do_cache_or_not(self, fileurl):
@@ -101,7 +99,7 @@ class Server:
             if len(log_arr) < self.occ_cache:
                 return False
             last_third = log_arr[len(log_arr)-self.occ_cache]["datetime"]
-            if datetime.datetime.fromtimestamp(time.mktime(last_third)) + datetime.timedelta(minutes=10) >= datetime.datetime.now():
+            if datetime.datetime.fromtimestamp(time.mktime(last_third)) + datetime.timedelta(minutes=5) >= datetime.datetime.now():
                 return True
             else:
                 return False
@@ -123,47 +121,18 @@ class Server:
             return cache_path, None
 
     def get_cache_req(self, client_addr, req):
-        self.get_access(req["URL"])
         self.add_log(req["URL"], client_addr)
         do_cache = self.do_cache_or_not(req["URL"])
         cache_path, last_mtime = self.get_current_cache_info(
             req["URL"])
-        self.leave_access(req["URL"])
         req["do_cache"] = do_cache
         req["cache_path"] = cache_path
         req["last_mtime"] = last_mtime
         return req
 
-    def get_space_for_cache(self, fileurl):
-        cache_files = os.listdir(self.cache_dir)
-        if len(cache_files) < self.cache_size:
-            return
-        for file in cache_files:
-            self.get_access(file)
-        last_mtime = min(logs[file][-1]["datetime"] for file in cache_files)
-        file_to_del = [file for file in cache_files if logs[file]
-                       [-1]["datetime"] == last_mtime][0]
-
-        os.remove(self.cache_dir + "/" + file_to_del)
-        for file in cache_files:
-            self.leave_access(file)
-
-    def insert_if_modified(self, req):
-        lines = req["C_DATA"].splitlines()
-        while lines[len(lines)-1] == '':
-            lines.remove('')
-
-    # header = "If-Modified-Since: " + time.strptime("%a %b %d %H:%M:%S %Y", req["last_mtime"])
-        header = time.strftime("%a %b %d %H:%M:%S %Y", req["last_mtime"])
-        header = "If-Modified-Since: " + header
-        lines.append(header)
-
-        req["C_DATA"] = "\r\n".join(lines) + "\r\n\r\n"
-        return req
 
     def parsing_req(self, creq, cAddr):
         try:
-            # print(creq)
 
             data = creq.splitlines()
             while data[len(data)-1] == '':
@@ -171,6 +140,7 @@ class Server:
             zz = data[0].split()
             full_url = zz[1]
             method = zz[0]
+           
             poshttp = full_url.find("://")
             protocol = "http"
             if poshttp == -1:
@@ -182,34 +152,32 @@ class Server:
             if wserv == -1:
                 wserv = len(full_url)
             posport = full_url.find(":")
-
+            zz[1] = full_url[wserv:]
             s_webserv = ""
-            if(posport == -1 or wserv < posport):
-                port = 80
-                s_webserv = full_url[:wserv]
+            if  wserv < posport :
+                s_webserv, port = full_url[:wserv] , 80
+            elif posport == -1 :
+                s_webserv, port = full_url[:wserv] , 80
             else:
-                port = int(full_url[(posport+1):wserv])
+                port = int((full_url[(posport+1):])[:wserv-posport-1])
                 s_webserv = full_url[:posport]
 
-            auth = []
+            auth = []              
+            auth_val = None
             for i in data:
                 if "Authorization" in i:
                     auth.append(i)
-            # print(auth)
+
             if len(auth) > 0:
                 auth_val = auth[0].split()[5]
                 pos = auth_val.find("\\")
                 auth_val = auth_val[:pos]
-            else:
-                auth_val = None
 
-            zz[1] = full_url[wserv:]
+
+            
             data[0] = ' '.join(zz)
             creq = "\r\n".join(data) + '\r\n\r\n'
-            # vv = ccdd.find("Proxy")
-            # ccdd = ccdd[:vv-4]
-            # ccdd = ccdd + "'"
-            # # print(ccdd)
+
             print(s_webserv)
             ret_obj = {
                 "S_PORT": port,
@@ -221,9 +189,10 @@ class Server:
                 "AUTH": auth_val,
             }
             return ret_obj
-        except:
+        except Exception as e :
             print("Error in parsing\n")
-            return None
+            print e
+            return 
 
     def handleConn(self, conn, cAddr):
         try:
@@ -234,7 +203,7 @@ class Server:
             self.servSckt.close()
             conn.close()
             return
-        print(crequest)
+
         req = self.parsing_req(str(crequest), cAddr)
 
         if not req:
@@ -257,14 +226,17 @@ class Server:
             conn.close()
             return
 
-        if "POST" in req["METHOD"]:
-            print("POSTT!!!!\n")
+        if "POST" in req["METHOD"]: 
             self.post_method(conn, req)
+
         elif "GET" in req["METHOD"]:
-            print("GET!!!!\n")
             req = self.get_cache_req(cAddr, req)
             if req["last_mtime"]:
-                req = self.insert_if_modified(req)
+                ini = req["C_DATA"].splitlines()
+                while ini[len(ini)-1] == '':
+                    ini.remove('')
+                ini.append("If-Modified-Since: " + time.strftime("%a %b %d %H:%M:%S %Y", req["last_mtime"]))
+                req["C_DATA"] = "\r\n".join(ini) + "\r\n\r\n"
             self.get_method(conn, req)
         else:
             conn.send(b"HTTP/1.0 200 OK\r\n")
@@ -275,7 +247,6 @@ class Server:
             return
 
     def get_method(self, conn, req):
-        print("hii")
         do_cache = req["do_cache"]
         cache_path = req["cache_path"]
         last_mtime = req["last_mtime"]
@@ -298,43 +269,38 @@ class Server:
             new_sckt.close()
             conn.close()
             return
+        print("hii")
 
         new_sckt.send(req["C_DATA"].encode())
         try:
             data = new_sckt.recv(4096)
-
+            print("--------")
+            print(data)
+            print("--------s")
             if last_mtime and "304 Not Modified" in data:
-                print("returning cached file _ to bb")
-                #get_access(req["URL"])
+                print("returning cached file")
                 f = open(cache_path, 'rb')
                 chunk = f.read(4096)
                 while chunk:
                     conn.send(chunk)
                     chunk = f.read(4096)
                 f.close()
-                #leave_access(req["URL"])
-
+        
             else:
                 if do_cache:
-                    print("caching file while serving _ & +")
-                    #get_space_for_cache(req["URL"])
-                    #get_access(req["URL"])
+                    print("caching file!!")
                     f = open(cache_path, "w+")
                     while len(data):
                         conn.send(data)
                         f.write(data)
                         data = new_sckt.recv(4096)
-                        # print len(reply), reply
                     f.close()
-                    #leave_access(req["URL"])
                     conn.send("\r\n\r\n")
                 else:
-                    print("without caching serving __ to __")
-                    # print len(reply), reply
+                    print("without caching!!")
                     while len(data):
                         conn.send(data)
                         data = new_sckt.recv(4096)
-                        # print len(reply), reply
                     conn.send("\r\n\r\n")
 
             new_sckt.close()
