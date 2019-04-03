@@ -16,7 +16,7 @@ class Server:
         for b_url in lis:
             config['BLACKLIST'].append(b_url)
         self.cache_size = 3
-        self.occ_cache = 2
+        self.occ_cache = 4
         self.cache_dir = "./cache"
         lis = self.readAuthSite()
         for b_url in lis:
@@ -82,52 +82,50 @@ class Server:
                 self.servSckt.close()
                 sys.exit(0)
 
-
-    def add_log(self, fileurl, cAddr):
-        fileurl = fileurl.replace("/", "__")
-        if not fileurl in logs:
-            logs[fileurl] = []
-        dt = time.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y")
-        logs[fileurl].append({
-            "datetime": dt,
-            "client": json.dumps(cAddr),
-        })
-
-    def do_cache_or_not(self, fileurl):
+    def cache_mein_daalna(self, furl):
         try:
-            log_arr = logs[fileurl.replace("/", "__")]
-            if len(log_arr) < self.occ_cache:
+            arr_logs_ka = logs[furl.replace("/", "__")]
+            if len(arr_logs_ka) < self.occ_cache:
                 return False
-            last_third = log_arr[len(log_arr)-self.occ_cache]["datetime"]
-            if datetime.datetime.fromtimestamp(time.mktime(last_third)) + datetime.timedelta(minutes=5) >= datetime.datetime.now():
-                return True
+            if datetime.datetime.fromtimestamp(time.mktime(arr_logs_ka[len(arr_logs_ka)-self.occ_cache]["datetime"])) + datetime.timedelta(minutes=5) < datetime.datetime.now():
+                return False
             else:
-                return False
-        except Exception as e:
-            print(e)
-            return False
+                return True
+        except:
+             pass
 
-    def get_current_cache_info(self, fileurl):
-        if fileurl.startswith("/"):
-            fileurl = fileurl.replace("/", "", 1)
+        return False
 
-        cache_path = self.cache_dir + "/" + fileurl.replace("/", "__")
+    def get_current_cache_info(self, url):
+        if url[0]=="/":
+            url[0] = ""
+        url_2=url.replace("/", "__")
+        cache_path = self.cache_dir + "/" + url_2
 
         if os.path.isfile(cache_path):
             last_mtime = time.strptime(time.ctime(
                 os.path.getmtime(cache_path)), "%a %b %d %H:%M:%S %Y")
             return cache_path, last_mtime
-        else:
-            return cache_path, None
 
-    def get_cache_req(self, client_addr, req):
-        self.add_log(req["URL"], client_addr)
-        do_cache = self.do_cache_or_not(req["URL"])
+        return cache_path, None
+
+    def get_cache_req(self, cAddr, req):
+        furl = req["URL"].replace("/", "__")
+        if not furl in logs:
+            logs[furl] = []
+            logs[furl].append({
+            "datetime": time.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y"),
+            "client": json.dumps(cAddr),
+            })
+        else:
+            logs[furl].append({
+            "datetime": time.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y"),
+            "client": json.dumps(cAddr),
+            })
+        do_cache = self.cache_mein_daalna(req["URL"])
         cache_path, last_mtime = self.get_current_cache_info(
             req["URL"])
-        req["do_cache"] = do_cache
-        req["cache_path"] = cache_path
-        req["last_mtime"] = last_mtime
+        req["do_cache"], req["cache_path"], req["last_mtime"] = do_cache, cache_path, last_mtime
         return req
 
 
