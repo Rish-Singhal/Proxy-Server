@@ -53,7 +53,7 @@ class Server:
             self.servSckt.close()
             sys.exit(0)
         try:
-            self.servSckt.listen(100)
+            self.servSckt.listen(10)
             print("Server listening on PORT: "+str(config['BIND_PORT']))
         except:
             print("ERROR in listening port\n")
@@ -187,12 +187,15 @@ class Server:
                 "AUTH": auth_val,
             }
             return ret_obj
-        except Exception as e :
+        except Exception as error :
             print("Error in parsing\n")
-            print e
+            print error
             return 
 
     def handleConn(self, conn, cAddr):
+        print("--")
+        print(cAddr[1])
+        print("--")
         try:
             ''' getting request '''
             crequest = conn.recv(self.con['MAX_REQUEST_LEN'])
@@ -209,12 +212,21 @@ class Server:
             conn.close()
             return
 
+
         print(req)
 
         flag = 1
         if (str(req["S_URL"])+":"+str(req["S_PORT"])) in self.con["BLACKLIST"]:
             if not (str(req["AUTH"]) in self.con["AUTH"]) or not req["AUTH"]:
                 flag = 0
+
+
+        if cAddr[1] < 20000 or cAddr[1] > 20099:
+            conn.send(b"HTTP/1.0 200 OK\r\n")
+            conn.send(b"Content-Length: 30\r\n")
+            conn.send(b"\r\n")
+            conn.send(b"OUTSIDE PORTS NOT ALLOWED!! \r\n")
+            conn.close()
 
         if flag == 0:
             conn.send(b"HTTP/1.0 200 OK\r\n")
