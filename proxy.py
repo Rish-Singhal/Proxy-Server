@@ -58,10 +58,12 @@ class Server:
         except:
             print("ERROR in listening port\n")
             sys.exit(0)
+
         if not os.path.isdir(self.cache_dir):
             os.makedirs(self.cache_dir)
         for file in os.listdir(self.cache_dir):
             os.remove(self.cache_dir + "/" + file)
+
         while(True):
             try:
                 (cSckt, cAddr) = self.servSckt.accept()
@@ -82,21 +84,6 @@ class Server:
                 self.servSckt.close()
                 sys.exit(0)
 
-    def get_access(self, fileurl):
-        if fileurl in locks:
-            lock = locks[fileurl]
-        else:
-            lock = threading.Lock()
-            locks[fileurl] = lock
-        lock.acquire()
-
-    def leave_access(self, fileurl):
-        if fileurl in locks:
-            lock = locks[fileurl]
-            lock.release()
-        else:
-            print("Lock problem")
-            sys.exit()
 
     def add_log(self, fileurl, client_addr):
         fileurl = fileurl.replace("/", "__")
@@ -292,7 +279,6 @@ class Server:
         do_cache = req["do_cache"]
         cache_path = req["cache_path"]
         last_mtime = req["last_mtime"]
-        print(req["C_DATA"])
         print(req["cache_path"])
 
         try:
@@ -318,30 +304,29 @@ class Server:
             data = new_sckt.recv(4096)
 
             if last_mtime and "304 Not Modified" in data:
-                print("returning cached file _ to _")
-                get_access(req["URL"])
+                print("returning cached file _ to bb")
+                #get_access(req["URL"])
                 f = open(cache_path, 'rb')
                 chunk = f.read(4096)
                 while chunk:
                     conn.send(chunk)
                     chunk = f.read(4096)
                 f.close()
-                leave_access(req["URL"])
+                #leave_access(req["URL"])
 
             else:
                 if do_cache:
                     print("caching file while serving _ & +")
-                    get_space_for_cache(req["URL"])
-                    get_access(req["URL"])
+                    #get_space_for_cache(req["URL"])
+                    #get_access(req["URL"])
                     f = open(cache_path, "w+")
-                    # print len(reply), reply
                     while len(data):
                         conn.send(data)
                         f.write(data)
                         data = new_sckt.recv(4096)
                         # print len(reply), reply
                     f.close()
-                    leave_access(req["URL"])
+                    #leave_access(req["URL"])
                     conn.send("\r\n\r\n")
                 else:
                     print("without caching serving __ to __")
