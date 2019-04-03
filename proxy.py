@@ -163,9 +163,60 @@ class Server:
             conn.send(b"\r\n")
             conn.send(b"USER NOT AUTHORIZED TO ACCESS THIS!! \r\n")
             conn.close()
+            return
 
-        # if flag == 0:
-        #        self.new_connection(crequest, port, s_webserv, conn)
+        if "POST" in req["METHOD"]:
+            print("POSTT!!!!\n")
+            # self.post_method(conn, req)
+        elif "GET" in req["METHOD"]:
+            print("GET!!!!\n")
+            # self.get_method(conn, req)
+        else:
+            conn.send(b"HTTP/1.0 200 OK\r\n")
+            conn.send(b"Content-Length: 20\r\n")
+            conn.send(b"\r\n")
+            conn.send(b"USE GET OR POST!! \r\n")
+            conn.close()
+            return
+
+    # if flag == 0:
+    #        self.new_connection(crequest, port, s_webserv, conn)
+
+    def post_method(self, conn, req):
+        try:
+            ''' trying to create socket '''
+            new_sckt = socket.socket(
+                socket.AF_INET, socket.SOCK_STREAM)
+        except:
+            print("Request server not created :( \n")
+            conn.close()
+            return
+
+        try:
+            ''' connecting  '''
+            new_sckt.connect((req["S_URL"], config["S_PORT"]))
+
+        except:
+            # print("Error in binding to local server  :( \n")
+            new_sckt.close()
+            conn.close()
+            return
+        try:
+            new_sckt.send(req["C_DATA"])
+            while(True):
+                xx = new_sckt.recv()
+                if len(xx):
+                    conn.send(xx)
+                else:
+                    break
+
+                new_sckt.close()
+                conn.close()
+                return
+        except:
+            new_sckt.close()
+            conn.close()
+            return
 
     def readBlckSite(self):
         ''' for fetching blacklisted url '''
@@ -199,11 +250,10 @@ class Server:
 
         return z
 
-
         # configuration
 confi = {
     'HOST_NAME': '127.0.0.1',
-    'MAX_REQUEST_LEN': 100000,
+    'MAX_REQUEST_LEN': 5000,
     'CONNECTION_TIMEOUT': 10,
     'BIND_PORT': 20100,
     'BLACKLIST': [],
