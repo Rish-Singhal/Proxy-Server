@@ -4,6 +4,7 @@ import os
 import time
 import signal
 import threading
+import base64
 
 
 class Server:
@@ -13,7 +14,13 @@ class Server:
         for b_url in lis:
             config['BLACKLIST'].append(b_url)
 
+        lis = self.readAuthSite()
+        for b_url in lis:
+            config['AUTH'].append(base64.b64encode(
+                b_url.encode('utf-8')).decode('utf-8'))
+
         print(config['BLACKLIST'])
+        print(config['AUTH'])
 
         self.con = config
         try:
@@ -70,6 +77,7 @@ class Server:
 
     def parsing_req(self, creq, cAddr):
         try:
+            # print(creq)
             xx = creq.split('\n')[0]
             zz = xx.split(' ')
             full_url = zz[1]
@@ -99,9 +107,11 @@ class Server:
             for i in data:
                 if "Authorization" in i:
                     auth.append(i)
-
+            # print(auth)
             if len(auth) > 0:
-                auth_val = auth[0].split()[2]
+                auth_val = auth[0].split()[5]
+                pos = auth_val.find("\\")
+                auth_val = auth_val[:pos]
             else:
                 auth_val = None
 
@@ -142,8 +152,20 @@ class Server:
 
         print(req)
 
+        flag = 1
+        if (str(req["S_URL"])+":"+str(req["S_PORT"])) in self.con["BLACKLIST"]:
+            if not (str(req["AUTH"]) in self.con["AUTH"]) or not req["AUTH"]:
+                flag = 0
+
+        if flag == 0:
+            conn.send(b"HTTP/1.0 200 OK\r\n")
+            conn.send(b"Content-Length: 39\r\n")
+            conn.send(b"\r\n")
+            conn.send(b"USER NOT AUTHORIZED TO ACCESS THIS!! \r\n")
+            conn.close()
+
         # if flag == 0:
-#        self.new_connection(crequest, port, s_webserv, conn)
+        #        self.new_connection(crequest, port, s_webserv, conn)
 
     def readBlckSite(self):
         ''' for fetching blacklisted url '''
@@ -161,6 +183,23 @@ class Server:
 
         return z
 
+    def readAuthSite(self):
+        ''' for fetching authorized username/password '''
+        try:
+            f = open("proxy/auth.txt", "r")
+        except:
+            print("Error: proxy/auth.txt not opening \n")
+
+        z = [i.rstrip(' \n') for i in f.readlines()]
+
+        try:
+            f.close()
+        except:
+            print("Error in closing.\n")
+
+        return z
+
+
         # configuration
 confi = {
     'HOST_NAME': '127.0.0.1',
@@ -168,6 +207,7 @@ confi = {
     'CONNECTION_TIMEOUT': 10,
     'BIND_PORT': 20100,
     'BLACKLIST': [],
+    'AUTH': [],
 }
 
 ris_server = Server(confi)
