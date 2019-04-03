@@ -5,6 +5,8 @@ import time
 import signal
 import threading
 import base64
+import json
+import datetime
 
 
 class Server:
@@ -80,11 +82,106 @@ class Server:
                 self.servSckt.close()
                 sys.exit(0)
 
+    def get_access(self, fileurl):
+        if fileurl in locks:
+            lock = locks[fileurl]
+        else:
+            lock = threading.Lock()
+            locks[fileurl] = lock
+        lock.acquire()
+
+    def leave_access(self, fileurl):
+        if fileurl in locks:
+            lock = locks[fileurl]
+            lock.release()
+        else:
+            print("Lock problem")
+            sys.exit()
+
+    def add_log(self, fileurl, client_addr):
+        fileurl = fileurl.replace("/", "__")
+        if not fileurl in logs:
+            logs[fileurl] = []
+        dt = time.strptime(time.ctime(), "%a %b %d %H:%M:%S %Y")
+        logs[fileurl].append({
+            "datetime": dt,
+            "client": json.dumps(client_addr),
+        })
+
+    def do_cache_or_not(self, fileurl):
+        try:
+            log_arr = logs[fileurl.replace("/", "__")]
+            if len(log_arr) < self.occ_cache:
+                return False
+            last_third = log_arr[len(log_arr)-self.occ_cache]["datetime"]
+            if datetime.datetime.fromtimestamp(time.mktime(last_third)) + datetime.timedelta(minutes=10) >= datetime.datetime.now():
+                return True
+            else:
+                return False
+        except Exception as e:
+            print(e)
+            return False
+
+    def get_current_cache_info(self, fileurl):
+        if fileurl.startswith("/"):
+            fileurl = fileurl.replace("/", "", 1)
+
+        cache_path = self.cache_dir + "/" + fileurl.replace("/", "__")
+
+        if os.path.isfile(cache_path):
+            last_mtime = time.strptime(time.ctime(
+                os.path.getmtime(cache_path)), "%a %b %d %H:%M:%S %Y")
+            return cache_path, last_mtime
+        else:
+            return cache_path, None
+
+    def get_cache_req(self, client_addr, req):
+        self.get_access(req["URL"])
+        self.add_log(req["URL"], client_addr)
+        do_cache = self.do_cache_or_not(req["URL"])
+        cache_path, last_mtime = self.get_current_cache_info(
+            req["URL"])
+        self.leave_access(req["URL"])
+        req["do_cache"] = do_cache
+        req["cache_path"] = cache_path
+        req["last_mtime"] = last_mtime
+        return req
+
+    def get_space_for_cache(self, fileurl):
+        cache_files = os.listdir(self.cache_dir)
+        if len(cache_files) < self.cache_size:
+            return
+        for file in cache_files:
+            self.get_access(file)
+        last_mtime = min(logs[file][-1]["datetime"] for file in cache_files)
+        file_to_del = [file for file in cache_files if logs[file]
+                       [-1]["datetime"] == last_mtime][0]
+
+        os.remove(self.cache_dir + "/" + file_to_del)
+        for file in cache_files:
+            self.leave_access(file)
+
+    def insert_if_modified(self, req):
+        lines = req["C_DATA"].splitlines()
+        while lines[len(lines)-1] == '':
+            lines.remove('')
+
+    # header = "If-Modified-Since: " + time.strptime("%a %b %d %H:%M:%S %Y", req["last_mtime"])
+        header = time.strftime("%a %b %d %H:%M:%S %Y", req["last_mtime"])
+        header = "If-Modified-Since: " + header
+        lines.append(header)
+
+        req["C_DATA"] = "\r\n".join(lines) + "\r\n\r\n"
+        return req
+
     def parsing_req(self, creq, cAddr):
         try:
             # print(creq)
-            xx = creq.split('\n')[0]
-            zz = xx.split(' ')
+
+            data = creq.splitlines()
+            while data[len(data)-1] == '':
+                data.remove('')
+            zz = data[0].split()
             full_url = zz[1]
             method = zz[0]
             poshttp = full_url.find("://")
@@ -107,7 +204,6 @@ class Server:
                 port = int(full_url[(posport+1):wserv])
                 s_webserv = full_url[:posport]
 
-            data = creq.splitlines()
             auth = []
             for i in data:
                 if "Authorization" in i:
@@ -122,12 +218,16 @@ class Server:
 
             zz[1] = full_url[wserv:]
             data[0] = ' '.join(zz)
-            ccdd = "\r\n".join(data)+'\r\n\r\n '
-
+            creq = "\r\n".join(data) + '\r\n\r\n'
+            # vv = ccdd.find("Proxy")
+            # ccdd = ccdd[:vv-4]
+            # ccdd = ccdd + "'"
+            # # print(ccdd)
+            print(s_webserv)
             ret_obj = {
                 "S_PORT": port,
                 "S_URL": s_webserv,
-                "C_DATA": ccdd,
+                "C_DATA": creq,
                 "PROTOCOL": protocol,
                 "URL": full_url,
                 "METHOD": method,
@@ -147,7 +247,7 @@ class Server:
             self.servSckt.close()
             conn.close()
             return
-
+        print(crequest)
         req = self.parsing_req(str(crequest), cAddr)
 
         if not req:
@@ -175,7 +275,10 @@ class Server:
             self.post_method(conn, req)
         elif "GET" in req["METHOD"]:
             print("GET!!!!\n")
-            # self.get_method(conn, req)
+            req = self.get_cache_req(cAddr, req)
+            if req["last_mtime"]:
+                req = self.insert_if_modified(req)
+            self.get_method(conn, req)
         else:
             conn.send(b"HTTP/1.0 200 OK\r\n")
             conn.send(b"Content-Length: 20\r\n")
@@ -184,10 +287,79 @@ class Server:
             conn.close()
             return
 
-    # if flag == 0:
-    #        self.new_connection(crequest, port, s_webserv, conn)
+    def get_method(self, conn, req):
+        print("hii")
+        do_cache = req["do_cache"]
+        cache_path = req["cache_path"]
+        last_mtime = req["last_mtime"]
+        print(req["C_DATA"])
+        print(req["cache_path"])
 
-    # def get_method(self, conn, req)
+        try:
+            ''' trying to create socket '''
+            new_sckt = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        except:
+            print("Request server not created :( \n")
+            conn.close()
+            return
+
+        try:
+            ''' connecting  '''
+            new_sckt.connect((req["S_URL"], req["S_PORT"]))
+
+        except:
+            # print("Error in binding to local server  :( \n")
+            new_sckt.close()
+            conn.close()
+            return
+
+        new_sckt.send(req["C_DATA"].encode())
+        try:
+            data = new_sckt.recv(4096)
+
+            if last_mtime and "304 Not Modified" in data:
+                print("returning cached file _ to _")
+                get_access(req["URL"])
+                f = open(cache_path, 'rb')
+                chunk = f.read(4096)
+                while chunk:
+                    conn.send(chunk)
+                    chunk = f.read(4096)
+                f.close()
+                leave_access(req["URL"])
+
+            else:
+                if do_cache:
+                    print("caching file while serving _ & +")
+                    get_space_for_cache(req["URL"])
+                    get_access(req["URL"])
+                    f = open(cache_path, "w+")
+                    # print len(reply), reply
+                    while len(data):
+                        conn.send(data)
+                        f.write(data)
+                        data = new_sckt.recv(4096)
+                        # print len(reply), reply
+                    f.close()
+                    leave_access(req["URL"])
+                    conn.send("\r\n\r\n")
+                else:
+                    print("without caching serving __ to __")
+                    # print len(reply), reply
+                    while len(data):
+                        conn.send(data)
+                        data = new_sckt.recv(4096)
+                        # print len(reply), reply
+                    conn.send("\r\n\r\n")
+
+            new_sckt.close()
+            conn.close()
+            return
+
+        except:
+
+            conn.close()
+            return
 
     def post_method(self, conn, req):
         try:
@@ -209,9 +381,9 @@ class Server:
             conn.close()
             return
         try:
-            new_sckt.send(req["C_DATA"])
+            new_sckt.send(req["C_DATA"].encode("utf-8"))
             while(True):
-                xx = new_sckt.recv()
+                xx = new_sckt.recv(4096)
                 if len(xx):
                     conn.send(xx)
                 else:
@@ -258,7 +430,7 @@ class Server:
         return z
 
 
-        # configuration
+# configuration
 confi = {
     'HOST_NAME': '127.0.0.1',
     'MAX_REQUEST_LEN': 5000,
@@ -268,5 +440,6 @@ confi = {
     'AUTH': [],
 }
 
-
+locks = {}
+logs = {}
 ris_server = Server(confi)
