@@ -13,7 +13,9 @@ class Server:
         lis = self.readBlckSite()
         for b_url in lis:
             config['BLACKLIST'].append(b_url)
-
+        self.cache_size = 3
+        self.occ_cache = 2
+        self.cache_dir = "./cache"
         lis = self.readAuthSite()
         for b_url in lis:
             config['AUTH'].append(base64.b64encode(
@@ -54,7 +56,10 @@ class Server:
         except:
             print("ERROR in listening port\n")
             sys.exit(0)
-
+        if not os.path.isdir(self.cache_dir):
+            os.makedirs(self.cache_dir)
+        for file in os.listdir(self.cache_dir):
+            os.remove(self.cache_dir + "/" + file)
         while(True):
             try:
                 (cSckt, cAddr) = self.servSckt.accept()
@@ -167,7 +172,7 @@ class Server:
 
         if "POST" in req["METHOD"]:
             print("POSTT!!!!\n")
-            # self.post_method(conn, req)
+            self.post_method(conn, req)
         elif "GET" in req["METHOD"]:
             print("GET!!!!\n")
             # self.get_method(conn, req)
@@ -181,6 +186,8 @@ class Server:
 
     # if flag == 0:
     #        self.new_connection(crequest, port, s_webserv, conn)
+
+    # def get_method(self, conn, req)
 
     def post_method(self, conn, req):
         try:
@@ -250,6 +257,7 @@ class Server:
 
         return z
 
+
         # configuration
 confi = {
     'HOST_NAME': '127.0.0.1',
@@ -259,5 +267,6 @@ confi = {
     'BLACKLIST': [],
     'AUTH': [],
 }
+
 
 ris_server = Server(confi)
